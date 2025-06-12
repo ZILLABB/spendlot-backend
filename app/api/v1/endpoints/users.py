@@ -2,12 +2,17 @@
 User management endpoints.
 """
 from typing import List
+from datetime import datetime, timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.core.database import get_db
 from app.schemas.user import User, UserUpdate, UserProfile
 from app.services.user_service import UserService
+from app.services.receipt_service import ReceiptService
+from app.services.transaction_service import TransactionService
+from app.services.bank_account_service import BankAccountService
 from app.api.v1.dependencies import get_current_active_user, get_current_superuser
 
 router = APIRouter()
@@ -45,14 +50,39 @@ async def get_user_profile(
     """
     Get user profile with statistics.
     """
-    # TODO: Implement statistics calculation
-    # For now, return basic profile
+    # Initialize services
+    receipt_service = ReceiptService(db)
+    transaction_service = TransactionService(db)
+    bank_account_service = BankAccountService(db)
+
+    # Calculate total receipts
+    total_receipts = receipt_service.count_by_user(current_user.id)
+
+    # Calculate total transactions
+    total_transactions = transaction_service.count_by_user(current_user.id)
+
+    # Calculate total spent this month
+    now = datetime.utcnow()
+    start_of_month = datetime(now.year, now.month, 1)
+    end_of_month = datetime(now.year, now.month + 1, 1) if now.month < 12 else datetime(now.year + 1, 1, 1)
+
+    # Get spending summary for current month
+    monthly_summary = transaction_service.get_spending_summary(
+        user_id=current_user.id,
+        start_date=start_of_month,
+        end_date=end_of_month
+    )
+    total_spent_this_month = float(monthly_summary.get("total_expenses", 0.0))
+
+    # Count connected bank accounts
+    connected_accounts = len(bank_account_service.get_by_user(current_user.id))
+
     return UserProfile(
         user=current_user,
-        total_receipts=0,
-        total_transactions=0,
-        total_spent_this_month=0.0,
-        connected_accounts=0
+        total_receipts=total_receipts,
+        total_transactions=total_transactions,
+        total_spent_this_month=total_spent_this_month,
+        connected_accounts=connected_accounts
     )
 
 
